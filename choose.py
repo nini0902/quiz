@@ -14,7 +14,7 @@ cap = cv2.VideoCapture(0)
 options = ["A", "B", "C", "D"]
 current_selection = 2  # 初始選項 C
 last_move_time = time.time()
-move_delay = 0.7  # 停頓時間 (秒)
+move_delay = 0.8  # 停頓時間 (秒)
 
 # 初始化鼻子的位置變數
 face_direction = "center"  # "left", "right", "center"
@@ -106,4 +106,3 @@ with mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_land
 
 cap.release()
 cv2.destroyAllWindows()
-
