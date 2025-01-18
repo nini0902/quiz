@@ -28,6 +28,13 @@ face_direction = "center"
 # 定義使用 Notepad++ 打開文件的函數
 def reopen_notepad(file_path):
     subprocess.Popen(["C:\\Program Files\\Notepad++\\notepad++.exe", file_path])
+    
+# 定義覆蓋選項到文件的函數
+def write_to_file(file_path, content):
+    with open(file_path, "w") as file:  # 使用覆蓋模式寫入
+        file.write(content)
+        file.flush()
+    reopen_notepad(file_path)
 
 # 初始化 Mediapipe Face Mesh
 with mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5, min_tracking_confidence=0.5) as face_mesh:
@@ -95,7 +102,7 @@ with mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_land
                         selection_logged = False
                     elif time.time() - start_selection_time > 1 and not selection_logged:
                         if last_logged_selection != current_selection:
-                            with open("selection_results.txt", "a") as file:
+                            with open("selection_results.txt", "w") as file:  # 清空並覆蓋寫入
                                 file.write(f"{options[current_selection]}")  # 不換行寫入
                                 file.flush()
                             reopen_notepad("selection_results.txt")
