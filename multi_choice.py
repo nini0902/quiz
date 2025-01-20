@@ -96,7 +96,7 @@ with mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_land
                 vertical_angle = math.degrees(math.atan2(dy_chin, math.sqrt(dx_chin**2 + dz_chin**2)))
 
                 # 判斷是否為低頭 ( > -50 視為低頭 )
-                if vertical_angle > -53:
+                if vertical_angle > -63:
                     if start_selection_time is None:
                         start_selection_time = time.time()
                         selection_logged = False
@@ -143,4 +143,3 @@ with mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_land
 
 cap.release()
 cv2.destroyAllWindows()
-
