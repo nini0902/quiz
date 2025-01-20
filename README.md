@@ -51,5 +51,6 @@ else:
    start_selection_time = None
    selection_logged = False
 ```
-## 示範：單選題
+## 示範
+1. 單選題：左右選擇答案，低頭確認答案，同一行視為同一題，改答案會自動覆蓋
 ![](gif/test01.gif)
