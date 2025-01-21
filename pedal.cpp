@@ -1,20 +1,37 @@
-const int leftPedal = 2;  // 左踏板接數位腳位 2
-const int rightPedal = 3; // 右踏板接數位腳位 3
+const int nextButtonPin = A4;  // 下一題按鈕接到 A4
+const int prevButtonPin = A5;  // 上一題按鈕接到 A5
+int questionNumber = 1;        // 初始題號
 
 void setup() {
-  pinMode(leftPedal, INPUT_PULLUP);  // 使用內部上拉電阻
-  pinMode(rightPedal, INPUT_PULLUP);
-  Serial.begin(9600);  // 初始化序列通訊，波特率設為 9600
+  pinMode(nextButtonPin, INPUT_PULLUP); // 啟用內建上拉電阻
+  pinMode(prevButtonPin, INPUT_PULLUP); // 啟用內建上拉電阻
+  Serial.begin(9600);                  // 啟動序列監控
+  //Serial.println("Start Quiz System");
+  //displayQuestion();
 }
 
 void loop() {
-  if (digitalRead(leftPedal) == LOW) {
-    Serial.println("left_on");
-    delay(200); // 防止按鍵彈跳
+  // 檢測下一題按鈕
+  if (digitalRead(nextButtonPin) == LOW) {
+    delay(1000); // 防止彈跳
+    Serial.println("R");
+    questionNumber++;          // 題號加 1
+    //displayQuestion();         // 顯示新題號
   }
 
-  if (digitalRead(rightPedal) == LOW) {
-    Serial.println("right_on");
-    delay(200); // 防止按鍵彈跳
+  // 檢測上一題按鈕
+  if (digitalRead(prevButtonPin) == LOW) {
+    delay(1000); // 防止彈跳
+    if (questionNumber > 1) {  // 防止題號小於 1
+      Serial.println("L");
+      questionNumber--;
+      //displayQuestion();       // 顯示新題號
+    }
   }
+}
+
+// 顯示題號
+void displayQuestion() {
+  Serial.print("Current Question: ");
+  Serial.println(questionNumber);
 }
