@@ -1,139 +1,75 @@
-import serial
-from pynput.keyboard import Controller, Key
-import pygetwindow as gw
 import cv2
 import mediapipe as mp
 import math
 import time
+import subprocess
+import pyautogui
+import pyperclip
+import threading
+import serial
+from pynput.keyboard import Controller, Key
+import pygetwindow as gw
 
-# --------------------------
-#        SERIAL SETUP
-# --------------------------
-port = "COM3"  # Replace with your Arduino serial port (e.g., COM3, /dev/ttyACM0)
-baud_rate = 9600
-
-# Initialize keyboard controller
-keyboard = Controller()
-total_line = 1
-current_line = 1
-
-def focus_window(window_title):
-    """Focus a window by its title."""
-    windows = gw.getWindowsWithTitle(window_title)
-    if windows:
-        windows[0].activate()
-        print(f"Focused on window: {window_title}")
-    else:
-        print(f"Window with title '{window_title}' not found.")
-
-# Try focusing on Notepad++ at the start (adjust the title if needed).
-focus_window("Notepad++")
-
-# --------------------------
-#   MEDIAPIPE SETUP
-# --------------------------
+# 初始化 Mediapipe 的 Face Mesh 模組
 mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
 
-# Open webcam
+# 初始化鏡頭
 cap = cv2.VideoCapture(0)
 
-# Quiz options
-options = ["A", "B", "C", "D"]
-current_selection = 2  # Initial selection: C
-last_move_time = time.time()
-move_delay = 0.8  # Delay for left/right head movements
+# 定義使用 Notepad++ 打開文件的函數
+def reopen_notepad(file_path):
+    subprocess.Popen(["C:\\Program Files\\Notepad++\\notepad++.exe", file_path])
+    
+def job():
+    # 設定選項
+    options = ["A", "B", "C", "D"]
+    current_selection = 2  # 初始選項 C
+    last_move_time = time.time()
+    move_delay = 0.8  # 停頓時間 (秒)
 
-# Track whether we have already typed after tilting head down
-is_head_down = False
-# Track when head-down first detected
-head_down_start_time = None
+    # 記錄低頭的狀態
+    start_selection_time = None
+    selection_logged = False
+    last_logged_selection = None
 
-# Track face direction
-face_direction = "center"
-
-try:
-    # Open the serial port for Arduino
-    ser = serial.Serial(port, baud_rate)
-    print(f"Connected to {port}")
-    print("Waiting for data...")
-
-    # Initialize Mediapipe Face Mesh
-    with mp_face_mesh.FaceMesh(
-        static_image_mode=False,
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
-    ) as face_mesh:
-
+    # 預設臉部方向
+    face_direction = "center"
+    # 初始化 Mediapipe Face Mesh
+    with mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5, min_tracking_confidence=0.5) as face_mesh:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
 
-            # ----------------------------------------------------
-            # 1. CHECK ARDUINO INPUT (non-blocking)
-            # ----------------------------------------------------
-            if ser.in_waiting > 0:
-                data = ser.readline().decode().strip()
-                if data == "L":   # Move cursor up
-                    if current_line > 1:
-                        current_line -= 1
-                        keyboard.press(Key.up)
-                        keyboard.release(Key.up)
-                    print(f"Movement: L -> current_line={current_line}, total_line={total_line}")
-
-                elif data == "R":  # Move cursor down (and possibly create new line)
-                    if current_line == total_line:
-                        total_line += 1
-                        # Press Enter
-                        keyboard.press(Key.enter)
-                        keyboard.release(Key.enter)
-                        # Press Ctrl+S (save)
-                        keyboard.press(Key.ctrl)
-                        keyboard.press('s')
-                        keyboard.release('s')
-                        keyboard.release(Key.ctrl)
-                    else:
-                        keyboard.press(Key.down)
-                        keyboard.release(Key.down)
-                    current_line += 1
-                    print(f"Movement: R -> current_line={current_line}, total_line={total_line}")
-
-                else:
-                    print(f"Unknown signal: {data}")
-
-            # ----------------------------------------------------
-            # 2. MEDIAPIPE FACE DETECTION & HEAD ORIENTATION
-            # ----------------------------------------------------
+            # 翻轉畫面讓操作更直覺
             frame = cv2.flip(frame, 1)
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = face_mesh.process(rgb_frame)
 
+            # 偵測人臉
+            results = face_mesh.process(rgb_frame)
+            
             if results.multi_face_landmarks:
                 for face_landmarks in results.multi_face_landmarks:
-                    # Draw face mesh on the frame
-                    mp_drawing.draw_landmarks(
-                        frame,
-                        face_landmarks,
-                        mp_face_mesh.FACEMESH_CONTOURS
-                    )
+                    # 繪製人臉網格
+                    mp_drawing.draw_landmarks(frame, face_landmarks, mp_face_mesh.FACEMESH_CONTOURS)
 
-                    # Key landmarks
-                    left_eye = face_landmarks.landmark[33]    # Left eye center
-                    right_eye = face_landmarks.landmark[263]  # Right eye center
-                    nose_tip = face_landmarks.landmark[1]     # Nose tip
-                    chin = face_landmarks.landmark[152]       # Chin
+                    # 取得關鍵點位置
+                    left_eye = face_landmarks.landmark[33]  # 左眼中心
+                    right_eye = face_landmarks.landmark[263]  # 右眼中心
+                    nose_tip = face_landmarks.landmark[1]  # 鼻尖
+                    chin = face_landmarks.landmark[152]  # 下巴
 
-                    # Calculate angle for left/right tilt
+                    # 計算臉部偏轉角度
                     eye_midpoint_x = (left_eye.x + right_eye.x) / 2
                     eye_midpoint_y = (left_eye.y + right_eye.y) / 2
+
                     dx = nose_tip.x - eye_midpoint_x
                     dy = nose_tip.y - eye_midpoint_y
+
                     angle = math.degrees(math.atan2(dy, dx))
 
-                    # Decide face direction (left/right)
+                    # 判斷臉的方向
                     if angle > 103:
                         face_direction = "left"
                     elif angle < 73:
@@ -141,96 +77,142 @@ try:
                     else:
                         face_direction = "center"
 
-                    # Move selection left/right with delay
+                    # 根據方向和時間控制選擇
                     if face_direction == "left" and time.time() - last_move_time > move_delay:
-                        if current_selection > 0:
+                        if current_selection > 0:  # 往左移動但不超出 A
                             current_selection -= 1
                             last_move_time = time.time()
 
                     elif face_direction == "right" and time.time() - last_move_time > move_delay:
-                        if current_selection < len(options) - 1:
+                        if current_selection < len(options) - 1:  # 往右移動但不超出 D
                             current_selection += 1
                             last_move_time = time.time()
 
-                    # Calculate vertical angle (nose_tip -> chin)
+                    # 計算鼻尖與下巴的垂直角度
                     dx_chin = nose_tip.x - chin.x
                     dy_chin = nose_tip.y - chin.y
-                    dz_chin = nose_tip.z - chin.z
-                    vertical_angle = math.degrees(
-                        math.atan2(dy_chin, math.sqrt(dx_chin**2 + dz_chin**2))
-                    )
+                    dz_chin = nose_tip.z - chin.z  # 深度座標
+                    vertical_angle = math.degrees(math.atan2(dy_chin, math.sqrt(dx_chin**2 + dz_chin**2)))
 
-                    # If head is tilted down for >1s, type the selected option
-                    if vertical_angle > -60:
-                        if head_down_start_time is None:
-                            head_down_start_time = time.time()
-
-                        if not is_head_down and (time.time() - head_down_start_time > 1.0):
-                            # Type the option at the current cursor position
-                            keyboard.type(options[current_selection])
-                            is_head_down = True
+                    # 判斷是否為低頭 ( > -50 視為低頭 )
+                    if vertical_angle > -63:
+                        if start_selection_time is None:
+                            start_selection_time = time.time()
+                            selection_logged = False
+                        elif time.time() - start_selection_time > 1 and not selection_logged:
+                            if last_logged_selection != current_selection:
+                                # 清空剪貼簿
+                                pyperclip.copy("")
+                                # 複製選項
+                                pyperclip.copy(options[current_selection])
+                                pyautogui.press('home')
+                                pyautogui.keyDown('shift')  # 按下 Shift
+                                pyautogui.press('end')      # 按下 End（同時 Shift 仍然被按住）
+                                pyautogui.keyUp('shift')    # 鬆開 Shift
+                                pyautogui.press('backspace')  # 刪除選取的文字
+                                
+                                pyautogui.hotkey('ctrl','v')
+                                time.sleep(0.1)
+                                
+                                pyautogui.hotkey('ctrl','s')
+                                last_logged_selection = current_selection
+                                selection_logged = True
                     else:
-                        head_down_start_time = None
-                        is_head_down = False
+                        start_selection_time = None
+                        selection_logged = False
 
-                    # Show vertical angle on the frame
-                    cv2.putText(
-                        frame,
-                        f"Vertical Angle: {vertical_angle:.2f} deg",
-                        (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1,
-                        (0, 255, 0),
-                        2
-                    )
+                    # 顯示垂直角度
+                    cv2.putText(frame, f"Vertical Angle: {vertical_angle:.2f} degrees", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-            # ----------------------------------------------------
-            # 3. DRAW THE ABCD BOXES
-            # ----------------------------------------------------
+            # 在畫面中繪製 ABCD 四個格子
             height, width, _ = frame.shape
             box_width = width // 4
 
             for i, option in enumerate(options):
                 x1 = i * box_width
                 x2 = (i + 1) * box_width
-                color = (255, 255, 255)
-                
-                # Draw each rectangle
-                cv2.rectangle(frame, (x1, 0), (x2, height), color, 2)
-                
-                # Draw option text
-                text_color = (0, 0, 255) if i == current_selection else (255, 255, 255)
-                cv2.putText(
-                    frame,
-                    option,
-                    (x1 + box_width // 2 - 20, height // 2),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    text_color,
-                    2
-                )
+                color = (255, 255, 255)  # 預設白色
 
-            # Highlight the currently selected box
+                # 畫出選項格子的框線
+                cv2.rectangle(frame, (x1, 0), (x2, height), color, 2)
+                # 顯示選項文字
+                text_color = (0, 0, 255) if i == current_selection else (255, 255, 255)
+                cv2.putText(frame, option, (x1 + box_width // 2 - 20, height // 2), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
+
+            # 高亮目前選擇的框框
             x1 = current_selection * box_width
             x2 = (current_selection + 1) * box_width
-            cv2.rectangle(frame, (x1, 0), (x2, height), (0, 0, 255), 6)
+            cv2.rectangle(frame, (x1, 0), (x2, height), (0, 0, 255), 6)  # 粗框表示選擇
 
-            # ----------------------------------------------------
-            # 4. SHOW THE FRAME
-            # ----------------------------------------------------
-            cv2.imshow("Quiz System with Head Detection", frame)
+            # 顯示畫面
+            cv2.imshow('Quiz System with Head Detection', frame)
 
-            # Press ESC to exit
-            if cv2.waitKey(5) & 0xFF == 27:
+            if cv2.waitKey(5) & 0xFF == 27:  # 按下 Esc 離開
                 break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+thread1= threading.Thread( target=job)
+thread1.start()
+
+# 初始化序列埠
+port = "COM3"  # 替換為你的 Arduino 序列埠名稱
+baud_rate = 9600
+
+# 初始化鍵盤控制器
+keyboard = Controller()
+total_line = 1
+current_line = 1
+
+def focus_window(window_title):
+    """聚焦窗口"""
+    windows = gw.getWindowsWithTitle(window_title)
+    if windows:
+        windows[0].activate()
+        print(f"Focused on window: {window_title}")
+    else:
+        print(f"Window with title '{window_title}' not found.")
+
+# 聚焦目標應用程式（如 Notepad++）
+focus_window("Notepad++")
+
+try:
+    ser = serial.Serial(port, baud_rate)
+    print(f"Connected to {port}")
+    print("Waiting for data...")
+
+    while True:
+        if ser.in_waiting > 0:
+            # 讀取資料並移除空白與換行符號
+            data = ser.readline().decode().strip()
+
+            if data == "L":  # 向上移動
+                if(current_line > 1):
+                    current_line -= 1
+                    keyboard.press(Key.up)
+                    keyboard.release(Key.up)
+                    pyautogui.hotkey('ctrl','s')
+            elif data == "R":  # 向下移動
+                if(current_line == total_line):
+                    total_line += 1
+                    keyboard.press(Key.enter)
+                    keyboard.release(Key.enter)
+                    pyautogui.press('space')  # 按下空白鍵
+                    pyautogui.press('home')
+                else:
+                    keyboard.press(Key.down)
+                    keyboard.release(Key.down)
+                current_line += 1
+                pyautogui.hotkey('ctrl','s')
+            else:
+                print(f"Unknown signal: {data}")
 
 except Exception as e:
     print(f"Error: {e}")
 
 finally:
-    # Clean up
     if 'ser' in locals() and ser.is_open:
         ser.close()
-    cap.release()
-    cv2.destroyAllWindows()
 
